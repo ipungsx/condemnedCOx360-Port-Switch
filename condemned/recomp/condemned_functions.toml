@@ -1,3 +1,9 @@
+# The CRT's setjmp/longjmp, replaced by the runtime's ppc_setjmp/ppc_longjmp. Recompiled as plain code, longjmp
+# "returns" into its caller with the registers of another frame. Run 2 on hardware (0.1.1) died that way: libjpeg's
+# error_exit in this game (0x82715EF8) longjmps out of read_markers, which then read 0x1A4 through r31 = 0.
+setjmp_address = 0x82B0D9E0
+longjmp_address = 0x82B0D790
+
 # Functions the analysis missed: small leaf/tail-called routines sitting in gaps between
 # detected functions (found from the 4 UnresolvedCall errors of the first codegen pass).
 [functions]
