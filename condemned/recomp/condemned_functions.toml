@@ -1,0 +1,6 @@
+# Functions the analysis missed: small leaf/tail-called routines sitting in gaps between
+# detected functions (found from the 4 UnresolvedCall errors of the first codegen pass).
+[functions]
+0x821934C0 = { size = 0x14 }
+0x8255C8C0 = { size = 0x18 }
+0x82C39430 = { size = 0xC8 }
