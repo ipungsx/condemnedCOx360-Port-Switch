@@ -14,6 +14,7 @@
  * uam cannot compile in reasonable time (ShaderRecompiler::saltosLineales).
  */
 
+#include "ds_shader_library.h"
 #include "XenosRecomp/shader_recompiler.h"
 
 #include <cstdio>
@@ -43,9 +44,10 @@ std::vector<uint8_t> LeerTodo(const std::filesystem::path& ruta) {
   return datos;
 }
 
-// Format 2008, compared without the low byte (shader type and compiler revision).
+// Format 2008, or 2005 (Condemned; converted with ds::Normalizar), compared without the low byte (shader type).
 bool FirmaValida(uint32_t flags_be) {
-  return (__builtin_bswap32(flags_be) & 0xFFFFFF00u) == 0x102A1100u;
+  const uint32_t f = __builtin_bswap32(flags_be) & 0xFFFFFF00u;
+  return f == 0x102A1100u || f == 0x102A0E00u;
 }
 
 
@@ -102,7 +104,8 @@ int main(int argc, char** argv) try {
     ShaderRecompiler recompilador;
     recompilador.saltosLineales = saltos_lineales;
     try {
-      recompilador.recompile(datos.data(), include);
+      const std::vector<uint8_t> normalizado = ds::Normalizar(datos);
+      recompilador.recompile(normalizado.data(), include);
     } catch (const std::exception& error) {
       std::printf("  %s: traduccion rechazada: %s\n", e.path().filename().string().c_str(), error.what());
       ++saltados;
