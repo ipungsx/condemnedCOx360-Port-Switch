@@ -45,6 +45,9 @@ endif()
 include("${CCO_TREE}/sources.cmake")
 set(CCO_GUEST_SOURCES ${GENERATED_SOURCES})
 set_source_files_properties(${CCO_GUEST_SOURCES} PROPERTIES COMPILE_OPTIONS "${REXGLUE_RECOMP_OPTIONS}")
+# condemned_register.cpp is one function of ~92,000 SetFunction calls, run once at boot: GCC at -O3 spent over an
+# hour on it. Unoptimized it builds in minutes and costs nothing at run time.
+set_property(SOURCE "${CCO_TREE}/condemned_register.cpp" APPEND PROPERTY COMPILE_OPTIONS -O0)
 list(LENGTH CCO_GUEST_SOURCES _cco_n)
 message(STATUS "condemned: ${_cco_n} recompiled sources from ${CCO_GEN_DIR}")
 
