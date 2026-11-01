@@ -8,6 +8,8 @@
 
 #include "cco_shaders.h"
 
+#include <rex/x360/xenos.h>
+
 #include "ds_shader_library.h"
 
 #include <algorithm>
@@ -103,6 +105,10 @@ const char* Leer(const ds::Shader& shader, EntradaShader& e) {
       const uint32_t w0 = e.microcodigo[size_t(elemento.instruccion) * 3];
       const uint32_t w1 = e.microcodigo[size_t(elemento.instruccion) * 3 + 1];
       elemento.manual = ((w0 >> 5) & 0x3F) != 0 || ((w0 >> 30) & 0x3) != 0;
+      // An element with no attribute location is read by the shader too (the translator's same rule): Condemned's
+      // skinned meshes with a second and third stream (BLENDWEIGHT1/2, BLENDINDICES1/2, POSITION2). As an attribute
+      // it was dropped (cause 22) and the shader read a storage buffer never bound: the GPU faulted.
+      if (rex::x360::UbicacionDeUso(elemento.uso, elemento.indice_uso) < 0) elemento.manual = true;
       elemento.redondeado = (w1 >> 15) & 0x1;
       e.elementos.push_back(elemento);
       for (size_t j = 0; j < 3; ++j) e.microcodigo[size_t(elemento.instruccion) * 3 + j] &= kFetchConserva[j];
