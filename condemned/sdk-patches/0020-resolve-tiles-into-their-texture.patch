@@ -1,0 +1,42 @@
+--- a/src/x360/deko/destinos.cpp
++++ b/src/x360/deko/destinos.cpp
+@@ -1195,6 +1195,39 @@
+       }
+       dx = uint32_t(x0);
+       dy = uint32_t(y0);
++      // Predicated tiling (Condemned renders 1280x720 as two 640-wide EDRAM tiles): Direct3D resolves each screen tile
++      // with the copy base moved to the 32x32 texel tile that holds it, and the rectangle starts at 0 in every tile
++      // (window offset -640). An address inside a texture already resolved with the same pitch and format is that
++      // texture, at that tile's position: the second half went into an image of its own and the front buffer showed
++      // the first half stretched over the screen.
++      if (!capa) {
++        uint32_t bpp = 0;
++        switch (formato_destino) {
++          // Bytes per texel in guest memory, for the formats FormatoResueltaDk takes.
++          case 4: bpp = 2; break;                                                     // 5_6_5
++          case 6: case 8: case 50: case 7: case 54: case 31: case 36: bpp = 4; break;  // 8_8_8_8, 2_10_10_10, ...
++          case 32: case 37: bpp = 8; break;                                           // 16_16_16_16_FLOAT, 32_32_FLOAT
++          default: break;
++        }
++        const uint32_t b = base & 0x1FFFFFFF;
++        if (bpp && pitch_destino >= 32 && !(pitch_destino & 31) && !resueltas_.count(b)) {
++          const uint32_t bytes_tile = 32 * 32 * bpp, por_fila = pitch_destino / 32;
++          const uint32_t filas = (alto_destino + 31) / 32;
++          for (const auto& [tb, r] : resueltas_) {
++            if (tb >= b || r.formato_guest != formato_destino || r.imagen.ancho != pitch_destino ||
++                r.imagen.alto != alto_destino) {
++              continue;
++            }
++            const uint32_t delta = b - tb;
++            if (delta % bytes_tile || delta / bytes_tile >= por_fila * filas) continue;
++            const uint32_t indice = delta / bytes_tile;
++            dx += (indice % por_fila) * 32;
++            dy += (indice / por_fila) * 32;
++            base = (base & ~0x1FFFFFFFu) | tb;
++            break;
++          }
++        }
++      }
+       base_resuelta = base & 0x1FFFFFFF;
+       // The copy destination gives the texture's pitch (a multiple of 32 texels) and its real height, not its width.
+       // A resolve from the left edge that is narrower than the pitch by less than 32 texels is the whole texture and
