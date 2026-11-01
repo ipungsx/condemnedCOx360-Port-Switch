@@ -1,0 +1,12 @@
+# ReXGlue v0.10.0 manifest for Condemned: Criminal Origins (Xbox 360, retail default.xex,
+# Title ID 534507D2, version 0.0.0.2). tools/codegen.sh fills in the paths.
+
+[project]
+name = "condemned"
+sdk_version = "0.10.0"
+game_root = "@GAME@"
+
+[entrypoint]
+file_path = "@XEX@"
+out_directory_path = "generated/default"
+includes = ["condemned_functions.toml"]
