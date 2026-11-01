@@ -194,7 +194,13 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
      * from the vertex buffer bound whole as a storage buffer); the renderer describes each one at runtime (D3D patches
      * format, stride and offset into the fetch per draw), at the element's position in the declaration.
      */
-    if (instr.srcRegister != 0 || instr.srcSwizzle != 0)
+    // An element with no attribute location (Condemned's skinned meshes with a second and third stream:
+    // BLENDWEIGHT1/2, BLENDINDICES1/2, POSITION2) is read the same way, at the vertex's own index (r0.x).
+    bool sinUbicacion = true;
+    for (auto& usageLocation : USAGE_LOCATIONS)
+        if (usageLocation.usage == findResult->second.usage && usageLocation.usageIndex == findResult->second.usageIndex)
+            sinUbicacion = false;
+    if (instr.srcRegister != 0 || instr.srcSwizzle != 0 || sinUbicacion)
     {
         usaLecturaManual = true;
         const uint32_t k = elementOrdinal.at(address);
@@ -1348,19 +1354,23 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             const char* usageType = USAGE_TYPES[uint32_t(vertexElement.usage)];
 
 
-            out += '\t';
-
+            int32_t ubicacion = -1;
             for (auto& usageLocation : USAGE_LOCATIONS)
             {
                 if (usageLocation.usage == vertexElement.usage && usageLocation.usageIndex == vertexElement.usageIndex)
                 {
-                    print("[[vk::location({})]] ", usageLocation.location);
+                    ubicacion = int32_t(usageLocation.location);
                     break;
                 }
             }
 
-            println("in {0} i{1}{2} : {3}{2},", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
-                uint32_t(vertexElement.usageIndex), USAGE_SEMANTICS[uint32_t(vertexElement.usage)]);
+            // No location: not an attribute, the shader reads it from the vertex buffer (dsVfetch, see the fetch).
+            if (ubicacion >= 0)
+            {
+                print("\t[[vk::location({})]] ", ubicacion);
+                println("in {0} i{1}{2} : {3}{2},", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
+                    uint32_t(vertexElement.usageIndex), USAGE_SEMANTICS[uint32_t(vertexElement.usage)]);
+            }
 
             vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
             elementOrdinal.emplace(uint32_t(vertexElement.address), i);
