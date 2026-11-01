@@ -1771,6 +1771,19 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
                 Register(g::XE_GPU_REG_RB_STENCILREFMASK), Register(g::XE_GPU_REG_RB_MODECONTROL) & 0x7,
                 Register(g::XE_GPU_REG_RB_SURFACE_INFO) & 0x3FFF, (Register(g::XE_GPU_REG_RB_SURFACE_INFO) >> 16) & 0x3,
                 why ? why : drawn ? "drawn" : "REJECTED by the renderer");
+    // The viewport as the game set it (condemned: what scales its menus, which look zoomed): VTE_CNTL, scale and offset
+    // per axis, the window offset and scissor, and the clip control.
+    {
+      auto f = [&](uint32_t r) { const uint32_t v = Register(r); float x; std::memcpy(&x, &v, 4); return x; };
+      REXLOG_INFO("[draws]       vte {:03X} x {:.1f}*+{:.1f} y {:.1f}*+{:.1f} z {:.3f}*+{:.3f} window {:08X} scissor "
+                  "{:08X}-{:08X} clip {:08X} sc_mode {:08X}",
+                  Register(g::XE_GPU_REG_PA_CL_VTE_CNTL), f(g::XE_GPU_REG_PA_CL_VPORT_XSCALE),
+                  f(g::XE_GPU_REG_PA_CL_VPORT_XOFFSET), f(g::XE_GPU_REG_PA_CL_VPORT_YSCALE),
+                  f(g::XE_GPU_REG_PA_CL_VPORT_YOFFSET), f(g::XE_GPU_REG_PA_CL_VPORT_ZSCALE),
+                  f(g::XE_GPU_REG_PA_CL_VPORT_ZOFFSET), Register(g::XE_GPU_REG_PA_SC_WINDOW_OFFSET),
+                  Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL), Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR),
+                  Register(g::XE_GPU_REG_PA_CL_CLIP_CNTL), Register(g::XE_GPU_REG_PA_SU_SC_MODE_CNTL));
+    }
     // The vertex input as D3D patched it: each fetch's format, swizzle, stride and offset. No vertex bytes: guest
     // memory is committed lazily, and even inside a vertex buffer the pages before the draw's first index may be
     // unmapped (reading vertex 0 crashed in game).

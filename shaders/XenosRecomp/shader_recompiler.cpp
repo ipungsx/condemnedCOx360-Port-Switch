@@ -1962,6 +1962,32 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
      * 2D, the binding becomes a TextureCube and loses the pair (the pair only exists for 2D). Shaders whose
      * table and fetches agree are not touched.
      */
+    // A sampler the constant table declares 2D (Condemned's 2005 tables have no Sampler3D) that the microcode only
+    // fetches as a volume: a Texture3D, without the 2D pair (its define would take the 3D index's name). The console
+    // reads the dimension back from the SPIR-V (cco_shaders.cpp, TiposDesdeSpirv).
+    for (const auto& [nombre, dimensiones] : dimensionesBuscadas)
+    {
+        if (dimensiones != (1u << uint32_t(TextureDimension::Texture3D)))
+            continue;
+        const std::string textura2D = fmt::format("]] Texture2D<float4> {}_Textura;\n", nombre);
+        const std::string indice2D = fmt::format("#define {0}_Texture2DDescriptorIndex {0}_Textura\n", nombre);
+        const size_t posTextura = out.find(textura2D);
+        const size_t posIndice = out.find(indice2D);
+        if (posTextura == std::string::npos || posIndice == std::string::npos)
+            continue;
+        out.replace(posIndice, indice2D.size(), fmt::format("#define {0}_Texture3DDescriptorIndex {0}_Textura\n", nombre));
+        out.replace(posTextura, textura2D.size(), fmt::format("]] Texture3D<float4> {}_Textura;\n", nombre));
+        const size_t posPareja = out.find(fmt::format("]] Texture2D<float4> {}_Pareja;\n", nombre));
+        const std::string definePareja = fmt::format("#define {0}_Texture3DDescriptorIndex {0}_Pareja\n", nombre);
+        if (posPareja != std::string::npos)
+        {
+            const size_t inicio = out.rfind("[[vk::binding(", posPareja);
+            const size_t fin = out.find(definePareja, posPareja);
+            if (inicio != std::string::npos && fin != std::string::npos)
+                out.erase(inicio, fin + definePareja.size() - inicio);
+        }
+    }
+
     for (const auto& [nombre, dimensiones] : dimensionesBuscadas)
     {
         if (dimensiones != (1u << uint32_t(TextureDimension::TextureCube)))

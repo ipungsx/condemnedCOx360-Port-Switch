@@ -1,0 +1,61 @@
+--- a/src/kernel/xboxkrnl/xboxkrnl_video.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_video.cpp
+@@ -205,6 +205,12 @@
+ void VdGetCurrentDisplayInformation_entry(ppc_ptr_t<X_DISPLAY_INFO> display_info) {
+   X_VIDEO_MODE mode;
+   VdQueryVideoMode(&mode);
++  static int display_logs = 0;
++  if (display_logs++ < 4) {
++    REXKRNL_INFO("[video] VdGetCurrentDisplayInformation: {}x{} widescreen {} hidef {}, overscan {}/{} (condemned-nx)",
++                 uint32_t(mode.display_width), uint32_t(mode.display_height), uint32_t(mode.is_widescreen),
++                 uint32_t(mode.is_hi_def), uint32_t(mode.display_width) / 4, uint32_t(mode.display_height) / 4);
++  }
+   display_info.Zero();
+   display_info->front_buffer_width = (uint16_t)mode.display_width;
+   display_info->front_buffer_height = (uint16_t)mode.display_height;
+@@ -248,6 +254,12 @@
+ 
+ void VdQueryVideoMode_entry(ppc_ptr_t<X_VIDEO_MODE> video_mode) {
+   VdQueryVideoMode(video_mode);
++  static int mode_logs = 0;
++  if (mode_logs++ < 4) {
++    REXKRNL_INFO("[video] VdQueryVideoMode: {}x{} widescreen {} hidef {} (condemned-nx)",
++                 uint32_t(video_mode->display_width), uint32_t(video_mode->display_height),
++                 uint32_t(video_mode->is_widescreen), uint32_t(video_mode->is_hi_def));
++  }
+ }
+ 
+ u32 VdQueryVideoFlags_entry() {
+@@ -379,6 +391,19 @@
+                            // sources from.
+     u32 dest_count         // Count in words.
+ ) {
++  // condemned-nx: what the game asks the display scaler to do (a source rectangle smaller than the front buffer
++  // would be zoomed on a real console; the renderer presents the whole front buffer).
++  static int scaler_logs = 0;
++  if (scaler_logs++ < 8) {
++    REXKRNL_INFO("[video] VdInitializeScalerCommandBuffer: source {}x{} at ({},{}), output {}x{} at ({},{}), "
++                 "front buffer {}x{}, filters {} / {}",
++                 uint32_t(scaler_source_wh) & 0xFFFF, uint32_t(scaler_source_wh) >> 16,
++                 uint32_t(scaler_source_xy) & 0xFFFF, uint32_t(scaler_source_xy) >> 16,
++                 uint32_t(scaled_output_wh) & 0xFFFF, uint32_t(scaled_output_wh) >> 16,
++                 uint32_t(scaled_output_xy) & 0xFFFF, uint32_t(scaled_output_xy) >> 16,
++                 uint32_t(front_buffer_wh) & 0xFFFF, uint32_t(front_buffer_wh) >> 16, uint32_t(vertical_filter_type),
++                 uint32_t(horizontal_filter_type));
++  }
+   // We could fake the commands here, but I'm not sure the game checks for
+   // anything but success (non-zero ret).
+   // For now, we just fill it with NOPs.
+@@ -484,6 +509,12 @@
+   assert_true(texture_format == rex::graphics::xenos::TextureFormat::k_8_8_8_8 ||
+               texture_format == rex::graphics::xenos::TextureFormat::k_2_10_10_10_AS_16_16_16_16);
+   assert_true(color_space == 0);  // RGB(0)
++  static int swap_logs = 0;
++  if (swap_logs++ < 4) {
++    REXKRNL_INFO("[video] VdSwap: front buffer {:08X} {}x{}, fetch {}x{} (condemned-nx)", uint32_t(*frontbuffer_ptr),
++                 uint32_t(*width), uint32_t(*height), 1 + uint32_t(gpu_fetch.size_2d.width),
++                 1 + uint32_t(gpu_fetch.size_2d.height));
++  }
+   assert_true(*width == 1 + gpu_fetch.size_2d.width);
+   assert_true(*height == 1 + gpu_fetch.size_2d.height);
+ 
