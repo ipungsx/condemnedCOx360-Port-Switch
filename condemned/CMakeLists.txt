@@ -54,9 +54,17 @@ option(CCO_DEPURACION "Debug modes: ZL + ZR shortcuts, telemetria.flag" ON)
 target_compile_definitions(condemned PRIVATE CCO_DEPURACION=$<BOOL:${CCO_DEPURACION}>)
 
 if(REXGLUE_PLATFORM_SWITCH)
+    # Homebrew Menu icon: the game's own title image from YOUR default.xex when tools/make_icon.py has made
+    # assets/icon.jpg (never committed); otherwise res/icon.jpg, ours, with nothing from the game.
+    option(CCO_ICON_DEL_DISCO "Homebrew menu icon from your own disc (assets/icon.jpg)" ON)
+    set(CCO_ICON "${CMAKE_CURRENT_SOURCE_DIR}/res/icon.jpg")
+    if(CCO_ICON_DEL_DISCO AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.jpg")
+        set(CCO_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.jpg")
+    endif()
+    message(STATUS "condemned: icon ${CCO_ICON}")
     rexglue_switch_add_nro(condemned
         NAME "Condemned: Criminal Origins"
         AUTHOR "condemned-nx"
         VERSION "${CCO_VERSION}"
-        ICON "${CMAKE_CURRENT_SOURCE_DIR}/res/icon.jpg")
+        ICON "${CCO_ICON}")
 endif()

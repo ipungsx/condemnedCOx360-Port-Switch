@@ -33,6 +33,17 @@ condemned/tools/codegen.sh game/default.xex
 Pertama kali, skrip membangun alat `rexglue` v0.10.0 (±10 menit), lalu menghasilkan ±220 MB C++ ke
 `condemned/recomp/generated/default/` (±8 menit). Folder itu tidak pernah di-commit.
 
+## Langkah 2b (opsional). Ikon dari disc Anda
+
+```
+REX_DUMP_SECTIONS=dump condemned/out/host-sdk/out/linux-amd64/rexglue -f codegen condemned/recomp/condemned_manifest.toml
+python3 condemned/tools/make_icon.py dump/image_82000000.bin
+```
+
+Ikon Homebrew Menu dibuat dari gambar title resmi di `default.xex` Anda (64x64, diperbesar ke 256x256 dengan judul
+di bawahnya) dan ditulis ke `condemned/assets/icon.jpg`, yang tidak pernah di-commit. Tanpa langkah ini NRO memakai
+ikon netral `res/icon.jpg`.
+
 ## Langkah 3. Toolchain Switch dan NRO
 
 devkitPro: `sudo dkp-pacman -S switch-dev deko3d` (https://devkitpro.org/wiki/Getting_Started). Jika
