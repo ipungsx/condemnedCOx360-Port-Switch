@@ -41,7 +41,7 @@ endif()
 target_include_directories(condemned PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../shaders
                            ${REXSDK_DIR}/thirdparty/xxHash)
 
-set(CCO_VERSION "0.1.6")
+set(CCO_VERSION "0.1.7")
 execute_process(COMMAND git rev-parse --short=10 HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 OUTPUT_VARIABLE CCO_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 if(NOT CCO_COMMIT)

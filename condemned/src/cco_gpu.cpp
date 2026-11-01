@@ -132,6 +132,13 @@ REXCVAR_DEFINE_BOOL(cco_borrado_rectangulo, true, "DS2",
 REXCVAR_DEFINE_BOOL(cco_borrado_solo_salidas, true, "DS2",
                     "Borrados de Direct3D: borrar la profundidad por c1-c3 solo si el PS del borrado escribe en ellos "
                     "(como la Xbox 360; ds3-nx). false = como antes (todos los c1-c3 con mascara)");
+// Condemned renders its whole frame 2X-multisampled (1280x720 in two EDRAM tiles), with viewport and scissors in pixels
+// like a 1x surface: the renderer draws it at 1x as it is. Dead Space 2's quarter-rate trick (a 640x360 4X surface over
+// its 1280x720 depth buffer) needs the registers scaled up instead; with that on here every pass came out stretched
+// twice vertically (the menus "zoomed", the bottom half off screen).
+REXCVAR_DEFINE_BOOL(cco_msaa_cuarto_de_resolucion, false, "CCO",
+                    "Multisampled draws as Dead Space 2's quarter-rate trick (viewport and scissors scaled to the 1x "
+                    "surface). false = drawn at 1x with the game's own coordinates (Condemned)");
 REXCVAR_DEFINE_INT32(cco_auto_captura_s, 5, "DS2",
                      "Cada cuantos segundos se guarda una captura reducida (640x360) en capturas/auto_NNNN.bmp; 0 = nunca");
 REXCVAR_DEFINE_INT32(cco_auto_volcado_primero_s, 120, "DS2",
@@ -1317,7 +1324,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     rex::x360::PeticionDibujo request;
     request.registros = registers_.data();
     AliasScope alias(*this);
-    if (msaa) {
+    if (msaa && REXCVAR_GET(cco_msaa_cuarto_de_resolucion)) {
       // Direct3D's trick for quarter-rate passes (Dead Space 2's light stencil masks): the 1280x720 depth buffer
       // drawn as a 640x360 4x-multisampled surface over the same EDRAM, each pixel's four samples landing on 2x2
       // pixels. The renderer has no multisampling and keys targets by pitch, so the draw goes to the 1x surface
@@ -1337,7 +1344,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     const bool drawn = destinos_->Dibujar(request);
     if (draw_tracing_) DrawTraceLine(drawn);
     if (msaa) {
-      ++generacion_encuadre_;  // back to the mirror's for the next draw
+      if (REXCVAR_GET(cco_msaa_cuarto_de_resolucion)) ++generacion_encuadre_;  // back to the mirror's for the next draw
       ++msaa_draws_;
     }
   }
