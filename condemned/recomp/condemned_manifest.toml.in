@@ -9,4 +9,4 @@ game_root = "@GAME@"
 [entrypoint]
 file_path = "@XEX@"
 out_directory_path = "generated/default"
-includes = ["condemned_functions.toml"]
+includes = ["condemned_functions.toml", "condemned_leaf_functions.toml"]
