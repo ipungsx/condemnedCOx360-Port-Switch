@@ -25,6 +25,8 @@ if [ ! -x "$REXGLUE" ]; then
     git clone -q https://github.com/rexglue/rexglue-sdk "$HOST_SDK"
     git -C "$HOST_SDK" checkout -q c94f5ebdcb3c9d1a460ca48e04f9758448f8d518   # v0.10.0
     git -C "$HOST_SDK" submodule update --init --depth 1 --jobs 8
+    # REX_DUMP_SECTIONS=<dir> writes the XEX's sections (decrypted) for tools/find_gap_functions.py.
+    git -C "$HOST_SDK" apply "$ROOT/condemned/tools/rexglue-dump-sections.patch"
   fi
   cmake -S "$HOST_SDK" -B "$HOST_SDK/out/host" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$CC_HOST" -DCMAKE_CXX_COMPILER="$CXX_HOST" -DCMAKE_CXX_STANDARD=23 \

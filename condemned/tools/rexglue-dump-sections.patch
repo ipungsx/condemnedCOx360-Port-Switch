@@ -1,0 +1,27 @@
+diff --git a/src/codegen/binary_view.cpp b/src/codegen/binary_view.cpp
+index 30694bc..aff23ab 100644
+--- a/src/codegen/binary_view.cpp
++++ b/src/codegen/binary_view.cpp
+@@ -14,6 +14,9 @@
+ #include <rex/logging.h>
+ 
+ #include "codegen_logging.h"
++#include <cstdio>
++#include <cstdlib>
++#include <fmt/format.h>
+ #include <rex/system/binary_types.h>
+ #include <rex/system/module.h>
+ 
+@@ -98,6 +101,12 @@ BinaryView BinaryView::fromModule(const runtime::Module& module) {
+                      section.virtual_address, section.virtual_size, section.executable);
+   }
+ 
++  if (const char* dir = std::getenv("REX_DUMP_SECTIONS")) {
++    for (const auto& s : view.sections_) {
++      std::string path = std::string(dir) + "/" + std::string(s.name) + "_" + fmt::format("{:08X}", s.baseAddress) + ".bin";
++      if (FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(s.data, 1, s.size, f); std::fclose(f); }
++    }
++  }
+   REXCODEGEN_DEBUG("BinaryView: loaded {} sections, base=0x{:08X}, size=0x{:X}",
+                    view.sections_.size(), view.baseAddress_, view.imageSize_);
+ 
