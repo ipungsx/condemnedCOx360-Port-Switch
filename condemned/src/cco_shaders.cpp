@@ -1,6 +1,7 @@
 // deadspace2 - the shader library on the console (see cco_shaders.h).
 //
-// Dead Space 2's containers are the 2008 format (XenosRecomp shader.h, signature 0x102A1100/1101): the shader
+// Condemned's containers are the 2005 format (0x102A0E00/01), read through their 2008 conversion (ds::Normalizar,
+// XenosRecomp shader.h, signature 0x102A1100/1101): the shader
 // header is at +24, the microcode is `size` bytes at `physicalOffset`
 // of the physical part, the vertex elements follow the header at +0x24, the pixel shader outputs are at +0x1C.
 // The constant table is the same. All fields are big-endian.
@@ -63,7 +64,7 @@ uint32_t ContarKills(std::span<const uint32_t> spirv) {
 
 // The 2008 container into an entry. Returns the reason if it cannot be read.
 const char* Leer(const ds::Shader& shader, EntradaShader& e) {
-  const Contenedor c{shader.original};
+  const Contenedor c{shader.normalizado};  // 2008 layout (ds::Normalizar); lookups use shader.original
   if (!c.Hay(0, 36)) return "contenedor demasiado corto";
   const uint32_t virtuales = c.U32(4);
   const uint32_t tabla = c.U32(16);
@@ -274,7 +275,7 @@ void Biblioteca::RegistrarObjeto(rex::memory::Memory* memoria, uint32_t objeto, 
   }
   // The microcode as it is in the container (big-endian, unpatched): D3D has just copied it, or points at it.
   const ds::Shader& shader = *static_cast<const ds::Shader*>(entrada->juego);
-  const Contenedor c{shader.original};
+  const Contenedor c{shader.normalizado};  // 2008 layout (ds::Normalizar); lookups use shader.original
   const uint32_t virtuales = c.U32(4), cabecera = c.U32(24);
   const uint32_t desplazamiento = c.U32(cabecera);  // of the microcode in the physical part
   const uint32_t bytes = uint32_t(entrada->microcodigo.size() * 4);

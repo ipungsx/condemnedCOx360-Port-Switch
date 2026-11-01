@@ -24,9 +24,10 @@ raiz=$(cd "$(dirname "$0")/.." && pwd)
 shaders="$raiz/shaders"
 terceros="$raiz/sdk/thirdparty"
 VULKAN_BIN=${VULKAN_BIN:-$(ls -d "$HOME"/VulkanSDK/*/macOS/bin 2>/dev/null | tail -1)}
-DXC="$VULKAN_BIN/dxc"
-VAL="$VULKAN_BIN/spirv-val"
+DXC=${DXC:-$VULKAN_BIN/dxc}
+VAL=${VAL:-$VULKAN_BIN/spirv-val}
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN)}
+CXX=${CXX:-$(command -v clang++-20 || command -v clang++)}
 for herramienta in "$DXC" "$VAL"; do
   [ -x "$herramienta" ] || { echo "missing $herramienta (set VULKAN_BIN)"; exit 1; }
 done
@@ -34,11 +35,13 @@ done
 bin="$salida/bin"
 mkdir -p "$bin"
 echo "== tools"
-clang++ -std=c++2b -O1 -I"$shaders" -I"$shaders/XenosRecomp" -I"$terceros/fmt/include" -I"$terceros/xxHash" \
+# ds_shader_library.cpp includes xxHash with its own settings, so it is compiled apart from the -include'd PCH.
+$CXX -std=c++20 -O1 -I"$shaders" -I"$terceros/xxHash" -c "$shaders/ds_shader_library.cpp" -o "$bin/ds_shader_library.o"
+$CXX -std=c++2b -O1 -I"$shaders" -I"$shaders/XenosRecomp" -I"$terceros/fmt/include" -I"$terceros/xxHash" \
   -include "$shaders/XenosRecomp/pch_min.h" -DFMT_HEADER_ONLY -DXXH_INLINE_ALL \
   -Wno-switch -Wno-unused-variable -Wno-null-arithmetic -fms-extensions -fexperimental-library \
-  "$shaders/ds_hlsl.cpp" "$shaders/XenosRecomp/shader_recompiler.cpp" -o "$bin/ds_hlsl"
-clang++ -std=c++20 -O1 -I"$shaders" -I"$terceros/xxHash" \
+  "$shaders/ds_hlsl.cpp" "$shaders/XenosRecomp/shader_recompiler.cpp" "$bin/ds_shader_library.o" -o "$bin/ds_hlsl"
+$CXX -std=c++20 -O1 -I"$shaders" -I"$terceros/xxHash" \
   "$shaders/ds_empaquetar.cpp" "$shaders/ds_shader_library.cpp" -o "$bin/ds_empaquetar"
 
 echo "== HLSL"

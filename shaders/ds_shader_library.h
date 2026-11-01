@@ -14,6 +14,9 @@ namespace ds {
 // code alone is not enough. It is looked up before the driver creates its object.
 struct Shader {
   std::vector<uint8_t> original;
+  // The container in the 2008 layout every reader here expects: the original itself, or for the 2005 format
+  // (Condemned, 0x102A0E00/01) its conversion (Normalizar). Lookups still use `original`.
+  std::vector<uint8_t> normalizado;
   std::vector<uint32_t> spirv;
   uint64_t huella = 0;
   bool vertices = false;
@@ -31,6 +34,12 @@ class BibliotecaShaders {
  private:
   std::vector<Shader> shaders_;
 };
+
+// A 2005-format container (XDK of 2005, signature 0x102A0E00 PS / 0x102A0E01 VS) rewritten in the 2008 layout
+// (XenosRecomp's shader.h: 9-word header, Shader/PixelShader/VertexShader, definitions with physical offsets);
+// a 2008 container is returned unchanged. Throws std::runtime_error on a malformed container.
+std::vector<uint8_t> Normalizar(std::span<const uint8_t> original);
+bool EsFormato2005(std::span<const uint8_t> original);
 
 // Versioned local format, little-endian, with integrity checks.
 // It contains private data derived from the game; it is not embedded in the executable.

@@ -67,8 +67,9 @@ void Validar(Shader& s) {
   Exigir(s.original.size() >= 24 && s.original.size() <= kMaxOriginal,
          "Longitud del contenedor fuera de limites");
   const uint32_t firma = BE(s.original.data());
-  // Format 2008 (0x102A1100, +1 for a vertex shader). The physical part is 4-byte words.
-  Exigir((firma & ~1u) == 0x102A1100, "Firma de contenedor desconocida");
+  // Format 2008 (0x102A1100, +1 for a vertex shader) or 2005 (0x102A0E00, Condemned). The physical part is
+  // 4-byte words.
+  Exigir((firma & ~1u) == 0x102A1100 || (firma & ~1u) == 0x102A0E00, "Firma de contenedor desconocida");
   const uint32_t virtuales = BE(s.original.data() + 4);
   const uint32_t fisicos = BE(s.original.data() + 8);
   Exigir(virtuales >= 24 && fisicos && !(fisicos % 4) &&
@@ -76,6 +77,7 @@ void Validar(Shader& s) {
          "Longitudes del contenedor incoherentes");
   s.vertices = (firma & 1) != 0;
   s.huella = XXH3_64bits(s.original.data(), s.original.size());
+  s.normalizado = Normalizar(s.original);
   Exigir(s.spirv.size() >= 5 && s.spirv.size() <= kMaxSpirv / 4,
          "Longitud SPIR-V fuera de limites");
   Exigir(s.spirv[0] == 0x07230203 && s.spirv[4] == 0,
@@ -158,6 +160,134 @@ const Shader* BibliotecaShaders::Buscar(std::span<const uint8_t> original) const
     if (it->original.size() == original.size() &&
         std::equal(original.begin(), original.end(), it->original.begin())) return &*it;
   return nullptr;
+}
+
+
+namespace {
+uint32_t LeerBE(std::span<const uint8_t> d, size_t p) {
+  Exigir(p + 4 <= d.size(), "Contenedor 2005 truncado");
+  return uint32_t(d[p]) << 24 | uint32_t(d[p + 1]) << 16 | uint32_t(d[p + 2]) << 8 | d[p + 3];
+}
+void PonerBE(std::vector<uint8_t>& d, uint32_t v) {
+  for (int i = 3; i >= 0; --i) d.push_back(uint8_t(v >> (i * 8)));
+}
+void CambiarBE(std::vector<uint8_t>& d, size_t p, uint32_t v) {
+  for (int i = 0; i < 4; ++i) d[p + i] = uint8_t(v >> ((3 - i) * 8));
+}
+}  // namespace
+
+bool EsFormato2005(std::span<const uint8_t> o) {
+  return o.size() >= 24 && (LeerBE(o, 0) & ~1u) == 0x102A0E00u;
+}
+
+// The 2005 layout (read from Condemned's 342 containers):
+//   header (6 words): flags, virtualSize, physicalSize, definitionTableOffset (0: none), constantTableOffset,
+//                     shaderOffset
+//   definition table: 4 words, size, one word we do not use, then entries { register:16 | count:16, values } up to
+//                     a zero word. Float literals: the register is a byte offset in the constant file, 16 bytes a
+//                     register counted from c208, vertex constants at 0x1000 and pixel constants at 0x2000 (0x12F0 and 0x22F0
+//                     are c255: the compiler puts literals at the top), count
+//                     in floats. Integer constants: 0x2320 + 4 * i with one word per value, as in 2008.
+//   shader:           PS { ?, ?, 0, 0, interpolatorInfo, ?, ?, outputs, interpolators[] }
+//                     VS { ?, 0, 0, 0, interpolatorInfo, 0, 1, elementCount, ?, 0, ?, elements[], interpolators[] }
+//                     (elements and interpolators encoded as in 2008)
+//   physical part:    the microcode only (a multiple of 12 bytes); the literals live in the definition table.
+// The 2008 container keeps the constant table as it is (its offsets are relative to itself), moves the literals into
+// the physical part after the microcode and writes new Shader and DefinitionTable structures.
+std::vector<uint8_t> Normalizar(std::span<const uint8_t> o) {
+  if (!EsFormato2005(o)) return {o.begin(), o.end()};
+  const uint32_t flags = LeerBE(o, 0), virt = LeerBE(o, 4), phys = LeerBE(o, 8);
+  const uint32_t def = LeerBE(o, 12), ctab = LeerBE(o, 16), sh = LeerBE(o, 20);
+  const bool vs = flags & 1;
+  Exigir(virt >= 24 && uint64_t(virt) + phys == o.size() && phys % 12 == 0, "Contenedor 2005 incoherente");
+  Exigir(ctab >= 24 && ctab < virt && sh >= 24 && sh + 0x20 <= virt && (!def || (def >= 24 && def < virt)),
+         "Offsets del contenedor 2005 fuera de la parte virtual");
+  constexpr uint32_t kDelta = 0x24 - 0x18;  // the 2008 header is 3 words longer
+
+  // Literals: (register in the 2008 numbering, 4 words each).
+  struct Literal { uint32_t reg; uint32_t count; std::vector<uint32_t> valores; };
+  std::vector<Literal> literales;
+  std::vector<uint32_t> enteros;  // int4 definitions as in 2008: { register:16 | count:16, values[count] }...
+  if (def) {
+    size_t p = def + 24;  // 5 words of header and one more we do not use
+    while (p + 4 <= virt) {
+      const uint32_t rc = LeerBE(o, p);
+      if (rc == 0) break;
+      const uint32_t base = rc >> 16, n = rc & 0xFFFF;
+      Exigir(n && n <= 1024 && p + 4 + size_t(n) * 4 <= virt, "Definicion 2005 fuera de limites");
+      if (base >= 0x2320 && base < 0x23A0) {  // integer (loop) constants i0..i31: 0x2320 + 4 * i
+        // XenosRecomp steps over 2 + count words per int4 entry: the 2008 entries carry one more word.
+        for (uint32_t i = 0; i <= n; ++i) enteros.push_back(LeerBE(o, p + i * 4));
+        enteros.push_back(0);
+      } else {
+        Literal l;
+        l.reg = 208 + ((base & 0x0FFF) >> 4) + (vs ? 0 : 256);  // 0x22F0 / 0x12F0 = c255: offset 0 is c208
+        l.count = n;
+        for (uint32_t i = 0; i < n; ++i) l.valores.push_back(LeerBE(o, p + 4 + i * 4));
+        while (l.valores.size() % 4) l.valores.push_back(0);
+        literales.push_back(std::move(l));
+      }
+      p += 4 + size_t(n) * 4;
+    }
+  }
+
+  const uint32_t interp = LeerBE(o, sh + 16);
+  const uint32_t ninterp = (interp >> 5) & 0x1F;
+  std::vector<uint32_t> cuerpo;  // the 2008 Shader structure
+  cuerpo.push_back(0);           // physicalOffset: the microcode starts the physical part
+  cuerpo.push_back(phys);        // size
+  cuerpo.push_back(0);
+  cuerpo.push_back(0xFF00);      // fieldC: no svPos register (the 2005 header has none we can read)
+  cuerpo.push_back(0);
+  cuerpo.push_back(interp);
+  if (vs) {
+    const uint32_t nelem = LeerBE(o, sh + 28);
+    Exigir(nelem <= 64 && sh + 44 + size_t(nelem + ninterp) * 4 <= virt, "Elementos 2005 fuera de limites");
+    cuerpo.push_back(0);         // field18: no words before the elements
+    cuerpo.push_back(nelem);
+    cuerpo.push_back(0);
+    for (uint32_t i = 0; i < nelem + ninterp; ++i) cuerpo.push_back(LeerBE(o, sh + 44 + i * 4));
+  } else {
+    Exigir(sh + 32 + size_t(ninterp) * 4 <= virt, "Interpoladores 2005 fuera de limites");
+    cuerpo.push_back(0);
+    cuerpo.push_back(LeerBE(o, sh + 28));  // outputs
+    for (uint32_t i = 0; i < ninterp; ++i) cuerpo.push_back(LeerBE(o, sh + 32 + i * 4));
+  }
+
+  std::vector<uint8_t> r;
+  r.reserve(o.size() + 256);
+  for (int i = 0; i < 9; ++i) PonerBE(r, 0);  // header, filled below
+  r.insert(r.end(), o.begin() + 24, o.begin() + virt);  // definition table, constant table, old shader
+  while (r.size() % 4) r.push_back(0);
+  const uint32_t nuevoShader = uint32_t(r.size());
+  for (uint32_t w : cuerpo) PonerBE(r, w);
+  uint32_t nuevaDef = 0;
+  if (!literales.empty() || !enteros.empty()) {
+    nuevaDef = uint32_t(r.size());
+    for (int i = 0; i < 4; ++i) PonerBE(r, 0);
+    PonerBE(r, uint32_t(literales.size() * 8 + enteros.size() * 4 + 8));
+    uint32_t offset = phys;  // literals after the microcode, in the physical part
+    for (const auto& l : literales) {
+      PonerBE(r, l.reg << 16 | l.count);
+      PonerBE(r, offset);
+      offset += uint32_t(l.valores.size() * 4);
+    }
+    PonerBE(r, 0);  // end of the float4 definitions
+    for (uint32_t w : enteros) PonerBE(r, w);
+    PonerBE(r, 0);  // end of the int4 definitions
+  }
+  const uint32_t nuevaVirt = uint32_t(r.size());
+  r.insert(r.end(), o.begin() + virt, o.end());  // microcode
+  for (const auto& l : literales)
+    for (uint32_t v : l.valores) PonerBE(r, v);
+  CambiarBE(r, 0, 0x102A1100u | (vs ? 1u : 0u));
+  CambiarBE(r, 4, nuevaVirt);
+  CambiarBE(r, 8, uint32_t(r.size() - nuevaVirt));
+  CambiarBE(r, 12, 0);
+  CambiarBE(r, 16, ctab + kDelta);
+  CambiarBE(r, 20, nuevaDef);
+  CambiarBE(r, 24, nuevoShader);
+  return r;
 }
 
 std::vector<uint8_t> EmpaquetarShaders(std::vector<Shader> shaders) {
