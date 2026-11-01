@@ -27,6 +27,12 @@ if [ ! -f $BLD/done-general-tools ]; then
   $SRC/general-tools/configure --prefix=$DEVKITPRO/tools
   make -j$J; make install; touch $BLD/done-general-tools
 fi
+if [ ! -f $BLD/done-dekotools ]; then
+  step dekotools   # dekodef, which deko3d's build runs (needs meson, bison, flex)
+  [ -d $SRC/dekotools ] || git clone -q --depth 1 https://github.com/devkitPro/dekotools $SRC/dekotools
+  meson setup $BLD/dekotools $SRC/dekotools --prefix=$DEVKITPRO/tools
+  ninja -C $BLD/dekotools install; touch $BLD/done-dekotools
+fi
 if [ ! -f $BLD/done-libnx ]; then
   step libnx
   make -C $SRC/libnx/nx -j$J; make -C $SRC/libnx/nx install; touch $BLD/done-libnx

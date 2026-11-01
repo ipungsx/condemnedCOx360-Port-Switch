@@ -57,5 +57,9 @@ if [ ! -f $BLD/done-gcc2 ]; then
   cd $BLD/gcc
   make -j$J all; make install; touch $BLD/done-gcc2
 fi
+# GCC installs a limits.h that does not chain to newlib's when newlib's headers were not there at stage 1
+# (libnx then misses PATH_MAX): rebuild it the way GCC's own fixincludes would.
+GCC_INC=$prefix/lib/gcc/$target/16.1.0/include
+cat $SRC/gcc/gcc/limitx.h $SRC/gcc/gcc/glimits.h $SRC/gcc/gcc/limity.h > $GCC_INC/limits.h
 step devkitA64 done
 $prefix/bin/$target-g++ --version | head -1
