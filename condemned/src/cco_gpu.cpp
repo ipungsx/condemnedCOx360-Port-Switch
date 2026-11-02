@@ -132,6 +132,8 @@ REXCVAR_DEFINE_BOOL(cco_borrado_rectangulo, true, "DS2",
 REXCVAR_DEFINE_BOOL(cco_borrado_solo_salidas, true, "DS2",
                     "Borrados de Direct3D: borrar la profundidad por c1-c3 solo si el PS del borrado escribe en ellos "
                     "(como la Xbox 360; ds3-nx). false = como antes (todos los c1-c3 con mascara)");
+REXCVAR_DEFINE_BOOL(cco_borrado_xdk2005, true, "CCO",
+                    "Take Condemned's Direct3D clears (rect list, depthcontrol 8777 or 8701, unknown VS) as clears");
 // Condemned renders its whole frame 2X-multisampled (1280x720 in two EDRAM tiles), with viewport and scissors in pixels
 // like a 1x surface: the renderer draws it at 1x as it is. Dead Space 2's quarter-rate trick (a 640x360 4X surface over
 // its 1280x720 depth buffer) needs the registers scaled up instead; with that on here every pass came out stretched
@@ -1251,6 +1253,19 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
       std::memcpy(&v, &registers_[0x4400 + j], 4);
       rect_clear = v >= 0.0f && v <= 1.0f;
     }
+    // Condemned's Direct3D (XDK of 2005) clears through the surface itself, not a half-pitch alias, with the window
+    // scissor of the tile: one rectangle (rect list, 3 vertices) with depthcontrol 8777 (depth and stencil: the start
+    // of each tile, mode 4 with color, mode 5 without) or 8701 (stencil only, Z off: before each light's shadow
+    // volumes). None of them was taken for a clear ("0 emulated clears"), so the stencil of every light's shadow
+    // volumes piled up and its light filled the light's scissor box: the square lights and shadows of 0.1.7.
+    const uint32_t dc16 = Register(g::XE_GPU_REG_RB_DEPTHCONTROL) & 0xFFFF;
+    const bool clear_xdk2005 = !vs_ && REXCVAR_GET(cco_borrado_xdk2005) && (initiator & 0x3F) == 8 &&
+                               (initiator >> 16) == 3 && (dc16 == 0x8777 || dc16 == 0x8701);
+    if (clear_xdk2005) {
+      if (draw_tracing_) DrawTraceLine(true, "Direct3D 2005 clear, emulated");
+      EmulateClear(0, dc16 == 0x8701);
+      return;
+    }
     if (!vs_ && ((msaa && (Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR) & 0x3FFF) >= 0x2000) || rect_clear ||
                  clear_8701)) {
       if (draw_tracing_) DrawTraceLine(true, "Direct3D clear, emulated");
@@ -1483,7 +1498,8 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   uint32_t borrado_color_ = 0;
   std::unordered_set<uint64_t> borrados_d3d_vistos_;  // EmulateClear: the shapes read from vertices, logged once each
 
-  void EmulateClear(uint32_t msaa) {
+  // solo_estencil: the stencil only, the depth kept (Condemned's per-light stencil clears, depthcontrol 8701).
+  void EmulateClear(uint32_t msaa, bool solo_estencil = false) {
     namespace g = rex::graphics;
     AliasScope alias(*this);
     const uint32_t* r = msaa ? alias.Apply(msaa) : registers_.data();
@@ -1556,13 +1572,14 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
       rex::x360::RegistrosCopia c = base;
       c.rb_depth_info = (depth_info & ~uint32_t(0xFFF)) | (edram_base & 0xFFF);
       c.rb_copy_control = 4u | (1u << 9) | kNullCommand;
+      if (solo_estencil) c.rb_copy_control |= rex::x360::kCopiaSoloEstencil;
       c.rb_depth_clear = depth_value;
       emitir(c);
       what += fmt::format(" z={:03X}->{:08X}", edram_base & 0xFFF, depth_value);
     };
     std::string what;
     const uint32_t c0_base = base.rb_color_info[0] & 0xFFF;
-    const bool c0_written = !depth_only && (mask & 0xF);
+    const bool c0_written = !depth_only && !solo_estencil && (mask & 0xF);
     // The color: the multisampled ones were all seen clearing to 0. A single-sampled one takes what Direct3D's clear
     // shader writes, the pixel shader's c0 (RGBA8 for the renderer's clear).
     uint32_t color = 0;
