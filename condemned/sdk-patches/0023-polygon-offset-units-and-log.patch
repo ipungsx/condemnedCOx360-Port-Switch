@@ -1,0 +1,45 @@
+--- a/src/x360/deko/dibujos.cpp
++++ b/src/x360/deko/dibujos.cpp
+@@ -12,6 +12,7 @@
+ // that is not there yet draws with the one that keeps every interpolator, while the exact one compiles on the
+ // worker; anything else missing is compiled on the spot and added to the cache, which is saved on the SD card.
+ 
++#include <bit>
+ #include <rex/cvar.h>
+ #include <rex/graphics/registers.h>
+ #include <rex/graphics/xenos.h>
+@@ -1229,10 +1230,21 @@
+     escala_sesgo = Flotante(r[gr::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE]);
+     desplazamiento_sesgo = Flotante(r[gr::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_OFFSET]);
+   }
+-  float sesgo[2] = {desplazamiento_sesgo * (((r[gr::XE_GPU_REG_RB_DEPTH_INFO] >> 16) & 0x1)
+-                                                ? float(uint32_t(1) << 24)
+-                                                : float((uint32_t(1) << 24) - 1)),
++  // The offset register holds a fraction of the depth range (Direct3D 9's DEPTHBIAS), scaled to depth units here. A
++  // value of 1/1024 or more cannot be one (it would move a surface by a thousandth of the range): it is taken as depth
++  // units already (condemned-nx sdk-patches/0023). Every distinct pair is logged once, for checking.
++  const float unidades = ((r[gr::XE_GPU_REG_RB_DEPTH_INFO] >> 16) & 0x1) ? float(uint32_t(1) << 24)
++                                                                          : float((uint32_t(1) << 24) - 1);
++  float sesgo[2] = {std::fabs(desplazamiento_sesgo) >= (1.0f / 1024.0f) ? desplazamiento_sesgo
++                                                                        : desplazamiento_sesgo * unidades,
+                     escala_sesgo * (1.0f / 16.0f)};
++  if ((escala_sesgo != 0.0f || desplazamiento_sesgo != 0.0f) && sesgos_valores_vistos_.size() < 24 &&
++      sesgos_valores_vistos_.insert((uint64_t(std::bit_cast<uint32_t>(escala_sesgo)) << 32) |
++                                    std::bit_cast<uint32_t>(desplazamiento_sesgo)).second) {
++    REXLOG_INFO("[deko3d] sesgo de poligonos: PA_SU_SC_MODE_CNTL {:08X}, escala {} desplazamiento {} -> deko3d "
++                "constante {} pendiente {} (destino de color {})",
++                modo_sc, escala_sesgo, desplazamiento_sesgo, sesgo[0], sesgo[1], claves[0] != 0);
++  }
+   // A depth-only target as wide as a shadow map: what bias the game draws it with, once per width (to check).
+   const bool solo_z = claves[4] && !claves[0] && !claves[1] && !claves[2] && !claves[3];
+   if (solo_z && tipo >= 4 && pitch >= 512 && sesgos_vistos_.insert(pitch).second) {
+--- a/include/rex/x360/deko/render.h
++++ b/include/rex/x360/deko/render.h
+@@ -270,6 +270,7 @@
+   };
+   const ImagenDk* ResueltaApilada(uint32_t base, const ImagenDk& primera, uint32_t alto);
+   std::unordered_map<uint64_t, ApiladaDk> apiladas_;
++  std::set<uint64_t> sesgos_valores_vistos_;  // polygon offset (scale, offset) pairs logged once (Dibujar)
+   std::set<uint32_t> sesgos_vistos_;  // depth-only target widths whose bias was logged (Dibujar)
+   // A 3D texture whose slices are resolved textures (Dead Space 2's color grading LUT, Copiar): its host image and the
+   // version of each slice it holds.

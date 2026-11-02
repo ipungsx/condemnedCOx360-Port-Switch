@@ -1863,6 +1863,13 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
                   Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL), Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR),
                   Register(g::XE_GPU_REG_PA_CL_CLIP_CNTL), Register(g::XE_GPU_REG_PA_SU_SC_MODE_CNTL));
     }
+    // Polygon offset (Condemned's view models: the hand and the phone's keypad draw with it).
+    if (Register(g::XE_GPU_REG_PA_SU_SC_MODE_CNTL) & 0x3800) {
+      auto f = [&](uint32_t r) { const uint32_t v = Register(r); float x; std::memcpy(&x, &v, 4); return x; };
+      REXLOG_INFO("[draws]       poly offset front {} / {} back {} / {}", f(g::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE),
+                  f(g::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_OFFSET), f(g::XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_SCALE),
+                  f(g::XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_OFFSET));
+    }
     // The vertex input as D3D patched it: each fetch's format, swizzle, stride and offset. No vertex bytes: guest
     // memory is committed lazily, and even inside a vertex buffer the pages before the draw's first index may be
     // unmapped (reading vertex 0 crashed in game).
