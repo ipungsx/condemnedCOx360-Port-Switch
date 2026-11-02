@@ -22,6 +22,7 @@ set(CCO_SOURCES
     src/cco_cpu.cpp
     src/cco_shader_dump.cpp
     src/cco_shaders.cpp
+    src/cco_menu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../shaders/ds_shader_library.cpp
 )
 if(REXGLUE_SWITCH_DEKO3D)
@@ -41,7 +42,7 @@ endif()
 target_include_directories(condemned PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../shaders
                            ${REXSDK_DIR}/thirdparty/xxHash)
 
-set(CCO_VERSION "0.1.12")
+set(CCO_VERSION "0.2.0")
 execute_process(COMMAND git rev-parse --short=10 HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 OUTPUT_VARIABLE CCO_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 if(NOT CCO_COMMIT)

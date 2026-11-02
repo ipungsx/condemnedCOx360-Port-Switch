@@ -24,6 +24,8 @@
 // Without it the runtime drops the game's Vd* calls ("no GPU emulation loaded") and the render thread waits
 // forever for a GPU that never reads its commands.
 
+#include "cco_menu.h"
+#include "ds_shader_library.h"
 #include "cco_gpu.h"
 
 #include <algorithm>
@@ -79,6 +81,8 @@
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 
+REXCVAR_DECLARE(bool, cco_grano_pelicula);      // cco_menu.cpp
+REXCVAR_DECLARE(bool, cco_luz_volumetrica);     // cco_menu.cpp
 REXCVAR_DECLARE(bool, switch_captura_pedida);  // ZL + ZR + Down (sdk/src/input/switch/switch_input_driver.cpp)
 REXCVAR_DECLARE(bool, switch_volcado_pedido);  // ZL + ZR + Left: every resolved texture of the next frame
 REXCVAR_DECLARE(bool, switch_omitir_pedido);   // ZL + ZR + Right: next draw-skipping mode (SkipMode)
@@ -511,7 +515,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
       return false;
     }
     destinos_ = rex::x360::CrearDestinosDeko3d(
-        static_cast<rex::deko3d::ProveedorDeko3d*>(provider_.get()), memory_);
+        static_cast<rex::deko3d::ProveedorDeko3d*>(provider_.get()), memory_, cco::menu::Hooks());
     if (destinos_) {
       REXLOG_INFO("[gpu] deko3d renderer backend up (minimal renderer: draws, resolves and the Swap's frontbuffer)");
     }
@@ -1366,8 +1370,25 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     request.generacion_constantes_ps = generacion_constantes_ps_;
     request.generacion_fetch = generacion_fetch_;
     request.generacion_encuadre = generacion_encuadre_;
+    // The options menu (cco_menu.cpp): the volumetric light shafts left out, the film grain's strength at 0.
+    const uint8_t opcion = ps_ ? ClaseOpcion(ps_) : 0;
+    if (opcion == kOpcionLuzVolumetrica && !REXCVAR_GET(cco_luz_volumetrica)) {
+      ++skipped_by_mode_;
+      return;
+    }
+    std::array<uint32_t, 4> grano{};
+    const bool sin_grano = opcion == kOpcionGrano && !REXCVAR_GET(cco_grano_pelicula);
+    if (sin_grano) {
+      std::memcpy(grano.data(), &registers_[kRegGrano], sizeof(grano));
+      std::fill_n(&registers_[kRegGrano], 4, 0u);
+      request.generacion_constantes_ps = ++generacion_constantes_ps_;
+    }
     ++enviados_;
     const bool drawn = destinos_->Dibujar(request);
+    if (sin_grano) {
+      std::memcpy(&registers_[kRegGrano], grano.data(), sizeof(grano));
+      ++generacion_constantes_ps_;
+    }
     if (draw_tracing_) DrawTraceLine(drawn);
     if (msaa) {
       if (REXCVAR_GET(cco_msaa_cuarto_de_resolucion)) ++generacion_encuadre_;  // back to the mirror's for the next draw
@@ -1793,6 +1814,28 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   }
 
   // One line per draw of a traced light frame: what it draws with and what became of it.
+  // Which options-menu setting a pixel shader belongs to, by the constant and sampler names in its container:
+  // the composite pass (FilmGrain, PS constant c1 = 0x4404) and the volumetric light's slices and box.
+  static constexpr uint8_t kOpcionGrano = 1, kOpcionLuzVolumetrica = 2;
+  static constexpr uint32_t kRegGrano = 0x4404;
+  std::unordered_map<const void*, uint8_t> clase_opcion_;
+  uint8_t ClaseOpcion(const rex::x360::EntradaShader* ps) {
+    const auto it = clase_opcion_.find(ps);
+    if (it != clase_opcion_.end()) return it->second;
+    uint8_t clase = 0;
+    if (const auto* juego = static_cast<const ds::Shader*>(ps->juego)) {
+      const std::string_view texto(reinterpret_cast<const char*>(juego->original.data()), juego->original.size());
+      if (texto.find("FilmGrain") != std::string_view::npos) {
+        clase = kOpcionGrano;
+      } else if (texto.find("sSliceMapSampler") != std::string_view::npos ||
+                 texto.find("sVLDepthMapSampler") != std::string_view::npos) {
+        clase = kOpcionLuzVolumetrica;
+      }
+    }
+    clase_opcion_.emplace(ps, clase);
+    return clase;
+  }
+
   // cco_sonda_ps: what a spot light draw is given (Condemned's lights fill a square; the projector texture, the light
   // radius and the projector matrix are the suspects).
   uint32_t sondas_ = 0;

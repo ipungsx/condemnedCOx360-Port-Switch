@@ -1,0 +1,91 @@
+--- a/src/ui/deko3d/presentador.cpp
++++ b/src/ui/deko3d/presentador.cpp
+@@ -189,8 +189,8 @@
+ 
+ // ---- The overlay (rex/ui/superposicion.h): a game's options menu, a few lines in the same dot font
+ 
+-constexpr uint32_t kMenuColumnas = 44;
+-constexpr uint32_t kMenuFilas = 8;
++constexpr uint32_t kMenuColumnas = 54;  // condemned-nx sdk-patches/0024: room for a graphics options menu
++constexpr uint32_t kMenuFilas = 16;
+ constexpr uint32_t kMenuAncho = (kMenuColumnas + 2) * 6;  // a character of margin each side
+ constexpr uint32_t kMenuAlto = (kMenuFilas + 1) * 9;      // half a line of margin above and below
+ 
+@@ -230,6 +230,9 @@
+   static const uint8_t kExclamacion[7] = {0x04, 0x04, 0x04, 0x04, 0x04, 0, 0x04};
+   static const uint8_t kComa[7] = {0, 0, 0, 0, 0x0C, 0x04, 0x08};
+   static const uint8_t kPor[7] = {0, 0, 0x11, 0x0A, 0x04, 0x0A, 0x11};
++  static const uint8_t kMenor[7] = {0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02};
++  static const uint8_t kPorciento[7] = {0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03};
++  static const uint8_t kIgual[7] = {0, 0, 0x1F, 0, 0x1F, 0, 0};
+   if (c >= 'A' && c <= 'Z') return kLetras[c - 'A'];
+   switch (c) {
+     case '>': return kMayor;
+@@ -242,22 +245,48 @@
+     case '!': return kExclamacion;
+     case ',': return kComa;
+     case 'x': return kPor;
++    case '<': return kMenor;
++    case '%': return kPorciento;
++    case '=': return kIgual;
+     default: return GlifoContador(c);  // digits, '.', space
+   }
+ }
+ 
+-// The lines as RGBA8 texels: white on black, a character of margin.
++// The lines as RGBA8 texels on a dark blue panel, a character of margin. A line may start with a style byte
++// (rex/ui/superposicion.h): 1 the selected row (white on a blue bar), 2 a title (yellow), 3 a hint (grey).
+ void RasterizarMenu(const std::vector<std::string>& lineas, uint8_t* destino) {
+-  std::memset(destino, 0, kMenuAncho * kMenuAlto * 4);
+-  for (uint32_t i = 0; i < kMenuAncho * kMenuAlto; ++i) destino[i * 4 + 3] = 0xFF;
++  for (uint32_t i = 0; i < kMenuAncho * kMenuAlto; ++i) {
++    destino[i * 4 + 0] = 0x14;
++    destino[i * 4 + 1] = 0x1A;
++    destino[i * 4 + 2] = 0x38;
++    destino[i * 4 + 3] = 0xFF;
++  }
+   for (uint32_t l = 0; l < kMenuFilas && l < lineas.size(); ++l) {
+-    for (uint32_t i = 0; i < kMenuColumnas && i < lineas[l].size(); ++i) {
+-      const uint8_t* glifo = GlifoMenu(lineas[l][i]);
++    std::string_view texto = lineas[l];
++    uint8_t estilo = 0;
++    if (!texto.empty() && uint8_t(texto[0]) <= 3) {
++      estilo = uint8_t(texto[0]);
++      texto.remove_prefix(1);
++    }
++    uint8_t color[3] = {0xE8, 0xE8, 0xE8};
++    if (estilo == 2) color[0] = 0xF0, color[1] = 0xC8, color[2] = 0x30;
++    if (estilo == 3) color[0] = color[1] = color[2] = 0x98;
++    if (estilo == 1) {
++      color[0] = color[1] = color[2] = 0xFF;
++      for (uint32_t y = l * 9 + 4; y < l * 9 + 13 && y < kMenuAlto; ++y) {
++        for (uint32_t x = 3; x + 3 < kMenuAncho; ++x) {
++          uint8_t* t = destino + (y * kMenuAncho + x) * 4;
++          t[0] = 0x2C, t[1] = 0x4C, t[2] = 0xB0;
++        }
++      }
++    }
++    for (uint32_t i = 0; i < kMenuColumnas && i < texto.size(); ++i) {
++      const uint8_t* glifo = GlifoMenu(texto[i]);
+       for (uint32_t fila = 0; fila < 7; ++fila) {
+         for (uint32_t columna = 0; columna < 5; ++columna) {
+           if (!((glifo[fila] >> (4 - columna)) & 1)) continue;
+           uint8_t* t = destino + ((l * 9 + 5 + fila) * kMenuAncho + (i + 1) * 6 + columna) * 4;
+-          t[0] = t[1] = t[2] = 0xFF;
++          t[0] = color[0], t[1] = color[1], t[2] = color[2];
+         }
+       }
+     }
+--- a/include/rex/ui/superposicion.h
++++ b/include/rex/ui/superposicion.h
+@@ -1,7 +1,9 @@
+ // A few lines of text the deko3d presenter paints over the guest output (a game's options menu), centered in a black
+ // box with the FPS counter's dot font: no ImGui and no UI drawer, so presentation stays on the game's thread (a UI
+ // drawer moves every paint to the UI thread; Dead Space 3's screen went black that way). Upper-case letters, digits,
+-// space and . : / ( ) - + > ! , x. Thread-safe; an empty list takes it away.
++// space and . : / ( ) - + > < % = ! , x. Up to 16 lines of 54. A line may start with a style byte: 1 the selected row
++// (a blue bar), 2 a title (yellow), 3 a hint (grey) (condemned-nx sdk-patches/0024). Thread-safe; an empty list
++// takes it away.
+ 
+ #pragma once
+ 

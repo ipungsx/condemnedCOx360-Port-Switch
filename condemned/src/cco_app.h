@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cco_menu.h"
 #include <rex/cvar.h>
 #include <rex/filesystem.h>
 #include <rex/logging.h>
@@ -77,6 +78,7 @@ class CcoApp : public rex::ReXApp {
 
   void OnPostInitLogging() override {
     cco::cpu::InformarSistema();
+    cco::menu::CargarOpciones();  // the options menu's saved choices, over cco.toml (before the cvars are final)
     DefaultFlag("input_vibracion", "true");
     DefaultFlag("input_vibracion_fuerza", "0.5");
 #if !CCO_DEKO3D
@@ -98,6 +100,7 @@ class CcoApp : public rex::ReXApp {
 
   void OnPreLaunchModule() override {
     cco::cpu::Configurar();
+    cco::menu::Instalar();
 #if defined(__SWITCH__)
     if (const int32_t mhz = REXCVAR_GET(cco_gpu_portatil_mhz); mhz > 0) {
       RexSwitchApmPedirGpuMhz(mhz);
