@@ -141,6 +141,10 @@ REXCVAR_DEFINE_BOOL(cco_borrado_xdk2005, true, "CCO",
 REXCVAR_DEFINE_BOOL(cco_msaa_cuarto_de_resolucion, false, "CCO",
                     "Multisampled draws as Dead Space 2's quarter-rate trick (viewport and scissors scaled to the 1x "
                     "surface). false = drawn at 1x with the game's own coordinates (Condemned)");
+REXCVAR_DEFINE_INT32(cco_sonda_ps, 110, "CCO",
+                     "Probe for the square lights: the first draws with this pixel shader number (the spot light pass) "
+                     "log their VS and PS constants and fetch constants, and their textures go to sonda/ as raw guest "
+                     "bytes. -1 = off");
 REXCVAR_DEFINE_INT32(cco_auto_captura_s, 5, "DS2",
                      "Cada cuantos segundos se guarda una captura reducida (640x360) en capturas/auto_NNNN.bmp; 0 = nunca");
 REXCVAR_DEFINE_INT32(cco_auto_volcado_primero_s, 120, "DS2",
@@ -1294,6 +1298,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
       ++sin_ps_;
       return;
     }
+    if (ps_ && int(ps_->numero) == REXCVAR_GET(cco_sonda_ps)) SondaLuz();
     if ((skip_mode_ > 1 || REXCVAR_GET(cco_omitir_efectos) > 0) && SkippedByMode()) {
       ++skipped_by_mode_;
       return;
@@ -1781,6 +1786,49 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   }
 
   // One line per draw of a traced light frame: what it draws with and what became of it.
+  // cco_sonda_ps: what a spot light draw is given (Condemned's lights fill a square; the projector texture, the light
+  // radius and the projector matrix are the suspects).
+  uint32_t sondas_ = 0;
+  std::unordered_set<uint32_t> sonda_texturas_;
+  void SondaLuz() {
+    if (sondas_ >= 24) return;
+    ++sondas_;
+    auto f = [&](uint32_t r) { float x; std::memcpy(&x, &registers_[r], 4); return x; };
+    std::string vs, ps, fe;
+    for (uint32_t i = 0; i < 12; ++i)
+      vs += fmt::format(" c{}=({:.4g} {:.4g} {:.4g} {:.4g})", i, f(0x4000 + i * 4), f(0x4001 + i * 4),
+                        f(0x4002 + i * 4), f(0x4003 + i * 4));
+    for (uint32_t i = 0; i < 4; ++i)
+      ps += fmt::format(" c{}=({:.4g} {:.4g} {:.4g} {:.4g})", i, f(0x4400 + i * 4), f(0x4401 + i * 4),
+                        f(0x4402 + i * 4), f(0x4403 + i * 4));
+    for (size_t i = 0; i < ps_->samplers.size() && i < 4; ++i) {
+      const uint32_t reg = ps_->samplers[i].registro;
+      if (reg >= 32) continue;
+      const uint32_t* t = &registers_[0x4800 + reg * 6];
+      fe += fmt::format(" s{}=[{:08X} {:08X} {:08X} {:08X} {:08X} {:08X}]", reg, t[0], t[1], t[2], t[3], t[4], t[5]);
+      const uint32_t base = (t[1] >> 12) << 12;
+      if (base && base < 0x1FC00000u && sonda_texturas_.size() < 8 && sonda_texturas_.insert(base).second) {
+        const auto folder = rex::filesystem::GetExecutableFolder() / "sonda";
+        std::error_code ec;
+        std::filesystem::create_directories(folder, ec);
+        const auto path = folder / fmt::format("tex_{:08X}_s{}.bin", base, reg);
+        std::vector<uint8_t> bytes(0x40000);
+        std::memcpy(bytes.data(), memory_->TranslatePhysical(base), bytes.size());
+        std::vector<uint8_t> words(sizeof(uint32_t) * 6);
+        std::memcpy(words.data(), t, words.size());
+        bytes.insert(bytes.begin(), words.begin(), words.end());
+        rex::x360::EncolarEscrituraSd([path, file = std::move(bytes)]() {
+          if (FILE* o = std::fopen(path.string().c_str(), "wb")) {
+            std::fwrite(file.data(), 1, file.size(), o);
+            std::fclose(o);
+          }
+        });
+      }
+    }
+    REXLOG_INFO("[sonda] PS n{} VS n{} draw {}: VS{} | PS{} | fetch{}", ps_->numero, vs_ ? int(vs_->numero) : -1,
+                sondas_, vs, ps, fe);
+  }
+
   void DrawTraceLine(bool drawn, const char* why = nullptr) {
     namespace g = rex::graphics;
     if (draw_trace_n_ >= draw_trace_cap_) return;
