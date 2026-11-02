@@ -210,20 +210,13 @@ float4 tfetch2DSombraMin(Texture2D<float4> texture, Texture2D<float4> pareja, Sa
     return valor;
 }
 
-// Condemned's only volume is the 16x16x16 noise of its film grain (the composite pass). Sampling it hung the GPU on the
-// console (run 7, right after "volumen muestreado 1E145000 16x16x16"), so the noise is made here instead: a hash of the
-// wrapped coordinate, the same kind of value (uniform in 0..1, tiling with the volume's period).
+// Condemned's only volume is the 16x16x16 noise of its film grain (the composite pass), sampled as it is. 0.1.7 to
+// 0.1.11 made the noise in the shader instead (a hash per cell: blocky and far denser than the game's), because the GPU
+// hung right after the volume was first sampled (run 7). That hang was the composite shader itself: compiled from its
+// while/switch control flow it took 2 s per frame (fixed by the block reordering in shader_recompiler.cpp).
 float4 tfetch3D(Texture3D<float4> texture, SamplerState samplerState, float3 texCoord)
 {
-    const uint3 c = uint3(frac(texCoord) * 16.0) & 15u;
-    uint h = c.x | (c.y << 4) | (c.z << 8);
-    h = (h ^ 61u) ^ (h >> 16);  // Wang's integer hash
-    h *= 9u;
-    h ^= h >> 4;
-    h *= 0x27d4eb2du;
-    h ^= h >> 15;
-    const float n = float(h & 0xFFFFu) * (1.0 / 65535.0);
-    return float4(n, n, n, n);
+    return texture.Sample(samplerState, texCoord);
 }
 
 struct CubeMapData
