@@ -9,8 +9,10 @@ recompiled to C++ with [ReXGlue](https://github.com/rexglue/rexglue-sdk) v0.10.0
 > You need your own copy of the game (the retail Xbox 360 disc). This repository contains no game data and no
 > game code: the recompiled C++ is generated on your computer from your `default.xex`.
 
-**Status: 0.1.0, bring-up.** Not playable yet. The code generates and builds; it has not been run on a console.
-See [STATUS.md](STATUS.md) for what is done, what is known, and what the first runs on hardware must show.
+**Status: 0.2.0, playable.** The game runs from the start on hardware: menus, gameplay, lighting, stencil shadows,
+volumetric light, post-processing and characters render correctly, at about 30 to 40 FPS in handheld mode (GPU at
+460 MHz). A graphics options menu opens with ZL + ZR + Minus. Known issue: the evidence scanner's screen can stay
+black. Installation guide (in Indonesian): [INSTALL.md](INSTALL.md).
 
 ## How it differs from ds2-nx
 
@@ -20,11 +22,12 @@ for Condemned, so this port generates its own:
 | | ds2-nx | condemned-nx |
 |---|---|---|
 | Recompiled code | Dead-Space-2-Recomp's `src_tu2/` (checked in, PDB-named) | `tools/codegen.sh` from your `default.xex` (unnamed `sub_` functions) |
-| Codegen fixes | done upstream | `recomp/condemned_functions.toml` (3 functions the analysis missed) |
+| Codegen fixes | done upstream | `recomp/condemned_functions.toml` (3 functions, setjmp/longjmp) and `recomp/condemned_leaf_functions.toml` (1804 leaf functions without .pdata) |
 | Discs | 2 discs + Title Update 2 | 1 disc, no title update |
 | GPU glue | `ds2_gpu.cpp` (from halo3-nx, game-neutral) | the same file, `cco_gpu.cpp` |
 | Shader hooks | `D3DDevice_Create{Vertex,Pixel}Shader` at 0x82220568 / 0x822201C0 | the same XDK functions at 0x826D2780 / 0x826D25F0 (found by shape, 2005 XDK) |
-| SDK patches | `deadspace2/sdk-patches/` (19) | the same 19, applied unchanged |
+| Shaders | 2008 XDK containers | 2005 XDK containers, converted to the 2008 layout before translation (`shaders/ds_shader_library.cpp`) |
+| SDK patches | `deadspace2/sdk-patches/` (19) | the same 19, plus 0020 to 0024 for this game (tiled resolves, bone indices, polygon offset, options overlay) |
 
 ## Layout
 
