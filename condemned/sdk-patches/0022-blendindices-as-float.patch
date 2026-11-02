@@ -1,0 +1,17 @@
+diff --git a/include/rex/x360/xenos.h b/include/rex/x360/xenos.h
+index 68a955c..e98a5dd 100644
+--- a/include/rex/x360/xenos.h
++++ b/include/rex/x360/xenos.h
+@@ -326,7 +326,11 @@ inline bool EntradaEntera(uint8_t uso) {
+   // Only BLENDINDICES. Since the nfsmw_validado_normales library, normals, tangents and binormals are
+   // float4: NFSMW stores them as 16-bit integers (format 26) or as floats, and with uint4 the shader's
+   // asfloat gave degenerate directions (seen in the rear-view mirror).
+-  return uso == 2;
++  // Condemned (condemned-nx sdk-patches/0022): none. Its BLENDINDICES are k_8_8_8_8 normalized (D3DCOLOR, decoded
++  // in the shader with * 765.01); read as integers every bone index was 255 times too big. The shaders declare them
++  // float4, which holds UBYTE4's small integers exactly too (Uscaled).
++  (void)uso;
++  return false;
+ }
+ 
+ inline uint32_t ComponentesVertice(uint32_t formato) {

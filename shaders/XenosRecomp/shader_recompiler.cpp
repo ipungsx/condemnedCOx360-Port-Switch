@@ -23,7 +23,10 @@ static constexpr const char* USAGE_TYPES[] =
 {
     "float4", // POSITION
     "float4", // BLENDWEIGHT
-    "uint4", // BLENDINDICES
+    // BLENDINDICES as float4 too: Condemned stores them as D3DCOLOR (k_8_8_8_8 normalized) and its shaders multiply
+    // by 765.01 (D3DCOLORtoUBYTE4). As uint4 they arrived as 0..255, the bone index came out 255 times too big and
+    // every skinned mesh and shadow volume exploded. A float input is exact either way (UBYTE4 integer -> Uscaled).
+    "float4", // BLENDINDICES
     "float4", // NORMAL: the game stores them as 16-bit integers or as float
     "float4", // PSIZE
     "float4", // TEXCOORD
