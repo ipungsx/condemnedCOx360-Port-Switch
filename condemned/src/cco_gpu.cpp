@@ -141,7 +141,7 @@ REXCVAR_DEFINE_BOOL(cco_borrado_xdk2005, true, "CCO",
 REXCVAR_DEFINE_BOOL(cco_msaa_cuarto_de_resolucion, false, "CCO",
                     "Multisampled draws as Dead Space 2's quarter-rate trick (viewport and scissors scaled to the 1x "
                     "surface). false = drawn at 1x with the game's own coordinates (Condemned)");
-REXCVAR_DEFINE_INT32(cco_sonda_ps, 110, "CCO",
+REXCVAR_DEFINE_INT32(cco_sonda_ps, -1, "CCO",
                      "Probe for the square lights: the first draws with this pixel shader number (the spot light pass) "
                      "log their VS and PS constants and fetch constants, and their textures go to sonda/ as raw guest "
                      "bytes. -1 = off");
@@ -1263,11 +1263,17 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     // volumes). None of them was taken for a clear ("0 emulated clears"), so the stencil of every light's shadow
     // volumes piled up and its light filled the light's scissor box: the square lights and shadows of 0.1.7.
     const uint32_t dc16 = Register(g::XE_GPU_REG_RB_DEPTHCONTROL) & 0xFFFF;
+    // And 0000 (color only, mode 4): the volumetric light's 320x240 slice target is cleared that way before its
+    // slices are added up (ONE + ONE). Left uncleared it kept the low-resolution scene drawn there just before, and the
+    // light's box (drawn over the scene with that target) showed the scene again as a flat grey pane: the square
+    // "light shadows" of 0.1.9. Their color is black: the clear shader's c0 held leftovers (white with any alpha).
     const bool clear_xdk2005 = !vs_ && REXCVAR_GET(cco_borrado_xdk2005) && (initiator & 0x3F) == 8 &&
-                               (initiator >> 16) == 3 && (dc16 == 0x8777 || dc16 == 0x8701);
+                               (initiator >> 16) == 3 &&
+                               (dc16 == 0x8777 || dc16 == 0x8701 ||
+                                (dc16 == 0x0000 && (Register(g::XE_GPU_REG_RB_MODECONTROL) & 0x7) == 4));
     if (clear_xdk2005) {
       if (draw_tracing_) DrawTraceLine(true, "Direct3D 2005 clear, emulated");
-      EmulateClear(0, dc16 == 0x8701);
+      EmulateClear(0, dc16 == 0x8701, true);
       return;
     }
     if (!vs_ && ((msaa && (Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR) & 0x3FFF) >= 0x2000) || rect_clear ||
@@ -1504,7 +1510,8 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   std::unordered_set<uint64_t> borrados_d3d_vistos_;  // EmulateClear: the shapes read from vertices, logged once each
 
   // solo_estencil: the stencil only, the depth kept (Condemned's per-light stencil clears, depthcontrol 8701).
-  void EmulateClear(uint32_t msaa, bool solo_estencil = false) {
+  // color_cero: the color cleared to black (Condemned's clears; its clear shader's c0 is not the clear color).
+  void EmulateClear(uint32_t msaa, bool solo_estencil = false, bool color_cero = false) {
     namespace g = rex::graphics;
     AliasScope alias(*this);
     const uint32_t* r = msaa ? alias.Apply(msaa) : registers_.data();
@@ -1590,7 +1597,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     uint32_t color = 0;
     if (con_vertices) {
       color = borrado_color_;
-    } else if (!msaa) {
+    } else if (!msaa && !color_cero) {
       for (uint32_t j = 0; j < 4; ++j) {
         float v;
         std::memcpy(&v, &registers_[0x4400 + j], 4);
