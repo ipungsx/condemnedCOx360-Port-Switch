@@ -134,6 +134,19 @@ float4 tfetch2D(Texture2D<float4> texture, SamplerState samplerState, float2 tex
     return texture.Sample(samplerState, texCoord + desplazamiento);
 }
 
+// A fetch with unnormalized coordinates (TextureFetchInstruction::texCoordDenorm): the coordinate is in texels.
+// Condemned's post-process passes read the scene that way (the vertex shader writes uv * (1280, 720)); read as
+// normalized, every pixel sampled the clamped corner and the 3D world came out as one flat dark color.
+float4 tfetch2DDesnorm(Texture2D<float4> texture, SamplerState samplerState, float2 texCoord, float2 offset, float2 invSize)
+{
+    float2 inverso;
+    [branch] if (g_SpecConstants() & SPEC_CONSTANT_INV_TAMANO_TEX)
+        inverso = invSize;
+    else
+        inverso = 1.0 / getTexture2DDimensions(texture);
+    return texture.Sample(samplerState, (texCoord + offset) * inverso);
+}
+
 float2 getWeights2D(Texture2D<float4> texture, SamplerState samplerState, float2 texCoord, float2 offset)
 {
     return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) + offset - 0.5));
