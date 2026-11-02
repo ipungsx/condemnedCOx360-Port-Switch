@@ -1,6 +1,7 @@
 #include "shader_recompiler.h"
 
 #include <regex>
+#include <set>
 #include <cstdlib>
 #include <cstdio>
 #include "shader_common.h"
@@ -1519,6 +1520,10 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     // Forward jumps only (no loop, no jump back): see saltosLineales.
     bool soloHaciaDelante = true;
     uint32_t indiceCf = 0;
+    // For reordenado (below): per control flow instruction, whether it falls through to the next one and where it jumps.
+    bool hayBucles = false;
+    std::vector<bool> caeAlSiguiente;
+    std::vector<int32_t> destinoSalto;
 
     while (instrAddress < instrSize)
     {
@@ -1565,7 +1570,17 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             case ControlFlowOpcode::LoopStart:
             case ControlFlowOpcode::LoopEnd:
                 soloHaciaDelante = false;
+                hayBucles = true;
                 break;
+            }
+
+            {
+                const auto op = cfInstr.opcode;
+                const bool fin = op == ControlFlowOpcode::ExecEnd || op == ControlFlowOpcode::CondExecEnd ||
+                                 op == ControlFlowOpcode::CondExecPredCleanEnd || op == ControlFlowOpcode::CondExecPredEnd;
+                const bool incondicional = op == ControlFlowOpcode::CondJmp && cfInstr.condJmp.isUnconditional;
+                caeAlSiguiente.push_back(!fin && !incondicional);
+                destinoSalto.push_back(op == ControlFlowOpcode::CondJmp ? int32_t(cfInstr.condJmp.address) : -1);
             }
 
             if (address != 0)
@@ -1587,14 +1602,67 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
      */
     const bool lineal = !simpleControlFlow && soloHaciaDelante && saltosLineales;
 
+    /*
+     * reordenado: jumps back without a loop (Condemned's 2005 compiler moves the depth of field block after the
+     * shader's end and jumps back from it; its post-process shader also has jump-only trampolines there). The control
+     * flow graph is still acyclic, so the blocks are put in an order where every edge goes forward (Kahn, smallest
+     * index first, so a shader that is already in order keeps it) and each one runs as `if (pc == K)`, setting pc to
+     * its fall-through successor first and to the jump target when it jumps. Same straight-line code as lineal: with
+     * the `while (true) switch (pc)` loop, uam turned that shader into 656 KB of code that took 2 s per frame on the
+     * Switch, and the GPU's watchdog then faulted the queue (the in-game black screen and crash of 0.1.7).
+     */
+    std::vector<uint32_t> posicionCf;
+    uint32_t cantidadCf = 0;
+    bool reordenado = false;
+    if (!simpleControlFlow && !lineal && !hayBucles && saltosLineales)
+    {
+        cantidadCf = 2 * ((instrSize + 11) / 12);
+        if (cantidadCf <= caeAlSiguiente.size())
+        {
+            std::vector<std::vector<uint32_t>> sucesores(cantidadCf);
+            std::vector<uint32_t> entrantes(cantidadCf, 0);
+            for (uint32_t i = 0; i < cantidadCf; ++i)
+            {
+                if (caeAlSiguiente[i] && i + 1 < cantidadCf)
+                    sucesores[i].push_back(i + 1);
+                if (destinoSalto[i] >= 0 && uint32_t(destinoSalto[i]) < cantidadCf)
+                    sucesores[i].push_back(uint32_t(destinoSalto[i]));
+                for (uint32_t s : sucesores[i])
+                    ++entrantes[s];
+            }
+            std::set<uint32_t> listos;
+            for (uint32_t i = 0; i < cantidadCf; ++i)
+                if (entrantes[i] == 0)
+                    listos.insert(i);
+            posicionCf.assign(cantidadCf, UINT32_MAX);
+            uint32_t siguiente = 0;
+            while (!listos.empty())
+            {
+                const uint32_t n = *listos.begin();
+                listos.erase(listos.begin());
+                posicionCf[n] = siguiente++;
+                for (uint32_t s : sucesores[n])
+                    if (--entrantes[s] == 0)
+                        listos.insert(s);
+            }
+            // Acyclic and the entry first: otherwise the loop below is kept.
+            reordenado = siguiente == cantidadCf && posicionCf[0] == 0;
+        }
+    }
+    auto posicion = [&](uint32_t cf) -> uint32_t { return cf < cantidadCf ? posicionCf[cf] : cantidadCf; };
+    // Where each block's text starts in `out`, by control flow index, to put them in order at the end.
+    std::vector<size_t> inicioCf;
+    size_t inicioBloques = 0;
+
     if (simpleControlFlow)
     {
         out += '\n';
         indentation = 1;
     }
-    else if (lineal)
+    else if (lineal || reordenado)
     {
         out += "\n\tuint pc = 0;\n";
+        inicioBloques = out.size();
     }
     else
     {
@@ -1618,7 +1686,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
         for (auto& cfInstr : cfu.controlFlow)
         {
-            if (lineal)
+            if (reordenado)
+            {
+                indentation = 3;
+                if (pc != 0)
+                    out += "\t\t}\n";
+                inicioCf.push_back(out.size());
+                println("\t\tif (pc == {})", posicion(pc));
+                out += "\t\t{\n";
+                if (caeAlSiguiente[pc])
+                    println("\t\t\tpc = {};", posicion(pc + 1));
+            }
+            else if (lineal)
             {
                 indentation = 3;
                 if (pc != 0)
@@ -1760,8 +1839,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 if (cfInstr.condJmp.isUnconditional)
                 {
                     assert(!simpleControlFlow);
-                    println("\t\t\tpc = {};", uint32_t(cfInstr.condJmp.address));
-                    if (!lineal)
+                    println("\t\t\tpc = {};", reordenado ? posicion(cfInstr.condJmp.address) : uint32_t(cfInstr.condJmp.address));
+                    if (!lineal && !reordenado)
                         out += "\t\t\tcontinue;\n";
                 }
                 else
@@ -1789,8 +1868,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                     else
                     {
                         out += "\t\t\t{\n";
-                        println("\t\t\t\tpc = {};", uint32_t(cfInstr.condJmp.address));
-                        if (!lineal)
+                        println("\t\t\t\tpc = {};", reordenado ? posicion(cfInstr.condJmp.address) : uint32_t(cfInstr.condJmp.address));
+                        if (!lineal && !reordenado)
                             out += "\t\t\t\tcontinue;\n";
                         out += "\t\t\t}\n";
                     }
@@ -1885,7 +1964,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 else
                 {
                     // The end of the shader: out of the switch and the loop, or simply out of main.
-                    out += lineal ? "\t\t\treturn;\n" : "\t\t\tbreak;\n";
+                    out += (lineal || reordenado) ? "\t\t\treturn;\n" : "\t\t\tbreak;\n";
                 }
             }
 
@@ -1910,7 +1989,19 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         instrAddress += 12;
     }
 
-    if (lineal)
+    if (reordenado)
+    {
+        out += "\t\t}\n";
+        // The blocks in their new order.
+        inicioCf.push_back(out.size());
+        std::vector<std::string> bloques(cantidadCf);
+        for (uint32_t i = 0; i + 1 < inicioCf.size() && i < cantidadCf; ++i)
+            bloques[posicionCf[i]] = out.substr(inicioCf[i], inicioCf[i + 1] - inicioCf[i]);
+        out.resize(inicioBloques);
+        for (auto& b : bloques)
+            out += b;
+    }
+    else if (lineal)
     {
         out += "\t\t}\n";
     }
