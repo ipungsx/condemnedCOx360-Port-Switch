@@ -4,7 +4,7 @@ Buy me a coffee, and support my next project,
 Thanks
 https://saweria.co/ipungsx
 
-Condemned: Criminal Origins (Xbox 360) on the Nintendo Switch as a homebrew NRO, modelled on
+Condemned: Criminal Origins (Xbox 360) on the Nintendo Switch as a homebrew NRO, reffering on
 [ds2-nx](https://github.com/VasilkovND/ds2-nx). It's not an emulator: the game's PowerPC code is statically
 recompiled to C++ with [ReXGlue](https://github.com/rexglue/rexglue-sdk) v0.10.0 and built for the Switch on
 [rexglue-sdk-nx](https://github.com/nx-mod/rexglue-sdk-nx) with a deko3d renderer.
@@ -18,20 +18,6 @@ volumetric light, post-processing and characters render correctly, at about 30 t
 460 MHz). A graphics options menu opens with ZL + ZR + Minus. Known issue: the evidence scanner's screen can stay
 black. Installation guide (in Indonesian): [INSTALL.md](INSTALL.md).
 
-## How it differs from ds2-nx
-
-ds2-nx builds a recompiled tree someone else had already made and fixed (Dead-Space-2-Recomp). No such tree exists
-for Condemned, so this port generates its own:
-
-| | ds2-nx | condemned-nx |
-|---|---|---|
-| Recompiled code | Dead-Space-2-Recomp's `src_tu2/` (checked in, PDB-named) | `tools/codegen.sh` from your `default.xex` (unnamed `sub_` functions) |
-| Codegen fixes | done upstream | `recomp/condemned_functions.toml` (3 functions, setjmp/longjmp) and `recomp/condemned_leaf_functions.toml` (1804 leaf functions without .pdata) |
-| Discs | 2 discs + Title Update 2 | 1 disc, no title update |
-| GPU glue | `ds2_gpu.cpp` (from halo3-nx, game-neutral) | the same file, `cco_gpu.cpp` |
-| Shader hooks | `D3DDevice_Create{Vertex,Pixel}Shader` at 0x82220568 / 0x822201C0 | the same XDK functions at 0x826D2780 / 0x826D25F0 (found by shape, 2005 XDK) |
-| Shaders | 2008 XDK containers | 2005 XDK containers, converted to the 2008 layout before translation (`shaders/ds_shader_library.cpp`) |
-| SDK patches | `deadspace2/sdk-patches/` (19) | the same 19, plus 0020 to 0024 for this game (tiled resolves, bone indices, polygon offset, options overlay) |
 
 ## Layout
 
