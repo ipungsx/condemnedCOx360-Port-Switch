@@ -2,7 +2,9 @@
 
 Buy me a coffee, and support my next project,
 Thanks
+https://ko-fi.com/ipungsx
 https://saweria.co/ipungsx
+
 
 <img width="800" height="480" alt="2026110710322300" src="https://github.com/user-attachments/assets/a5fc0fe3-c35c-4006-8258-7e694d82cd7a" />
 <img width="800" height="480" alt="2026110710331000" src="https://github.com/user-attachments/assets/c35b5ece-5aa4-4b46-bb4b-4899c2b9acec" />
