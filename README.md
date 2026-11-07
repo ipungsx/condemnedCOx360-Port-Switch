@@ -4,6 +4,10 @@ Buy me a coffee, and support my next project,
 Thanks
 https://saweria.co/ipungsx
 
+<img width="800" height="480" alt="2026110710322300" src="https://github.com/user-attachments/assets/a5fc0fe3-c35c-4006-8258-7e694d82cd7a" />
+<img width="800" height="480" alt="2026110710331000" src="https://github.com/user-attachments/assets/c35b5ece-5aa4-4b46-bb4b-4899c2b9acec" />
+
+
 Condemned: Criminal Origins (Xbox 360) on the Nintendo Switch as a homebrew NRO, reffering on
 [ds2-nx](https://github.com/VasilkovND/ds2-nx). It's not an emulator: the game's PowerPC code is statically
 recompiled to C++ with [ReXGlue](https://github.com/rexglue/rexglue-sdk) v0.10.0 and built for the Switch on
